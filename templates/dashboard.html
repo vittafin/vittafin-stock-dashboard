@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VittaFin Stock News Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 30px; background: #f8f9fa; }
+    h1 { color: #222; }
+    .search-box { margin-bottom: 15px; }
+    input[type=text] { padding: 6px; width: 250px; }
+    button { padding: 6px 10px; }
+    .stock-tag { margin: 4px; display: inline-block; }
+    .stock-tag a { background: #0078d7; color: white; padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 13px; }
+    .card { background: white; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .title { font-size: 16px; font-weight: bold; color: #0078d7; text-decoration: none; }
+    .meta { font-size: 12px; color: #555; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h1>📊 VittaFin Stock News Dashboard</h1>
+  <form method="get" class="search-box">
+    <input type="text" name="q" placeholder="Filter by stock (e.g., RELIANCE)" value="{{ q }}">
+    <button type="submit">Search</button>
+  </form>
+  <div>
+    {% for s in stocks[:50] %}
+      <span class="stock-tag"><a href="/?q={{ s }}">{{ s }}</a></span>
+    {% endfor %}
+  </div>
+  <hr>
+  {% for r in rows %}
+  <div class="card">
+    <div class="meta">{{ r['stock'] }} | {{ r['fetched_at'] }}</div>
+    <a href="{{ r['link'] }}" target="_blank" class="title">{{ r['title'] }}</a>
+    <p>{{ r['narration'] }}</p>
+  </div>
+  {% else %}
+  <p>No news available. Run fetch_news.py to update the database.</p>
+  {% endfor %}
+</body>
+</html>
