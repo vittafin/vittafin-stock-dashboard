@@ -1,10 +1,37 @@
+# app.py
 from flask import Flask, render_template, request
 import sqlite3
 import os
 
 app = Flask(__name__)
 
-DB_PATH = os.path.join("data", "news.db")
+# Use an absolute path so it works on Render and locally
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "data", "news.db")
+
+# Ensure data folder exists
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+def ensure_db_and_table():
+    """Create database file and the news table if they don't exist."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    # Create the table if it doesn't exist (columns that your fetch script provides)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS news (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            stock TEXT,
+            title TEXT,
+            link TEXT UNIQUE,
+            narration TEXT,
+            fetched_at TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Ensure DB/table exists at app startup
+ensure_db_and_table()
 
 def query_news(stock_filter=None, limit=100):
     conn = sqlite3.connect(DB_PATH)
@@ -29,7 +56,6 @@ def query_news(stock_filter=None, limit=100):
     conn.close()
     return rows
 
-
 @app.route("/", methods=["GET"])
 def index():
     q = request.args.get("q", "").strip()
@@ -43,8 +69,7 @@ def index():
     conn.close()
     return render_template("dashboard.html", rows=rows, q=q, stocks=stocks)
 
-
 if __name__ == "__main__":
-    if not os.path.exists(DB_PATH):
-        print("⚠️  No database found. Please run fetch_news.py first.")
-    app.run(debug=True, port=5000)
+    # Local dev: helpful message
+    print("Starting Flask app. DB path:", DB_PATH)
+    app.run(debug=True, host="0.0.0.0", port=5000)
