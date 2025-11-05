@@ -1,65 +1,80 @@
-import os
-import sqlite3
 import requests
+import pandas as pd
+import sqlite3
 from bs4 import BeautifulSoup
-from datetime import datetime
 import nltk
+from datetime import datetime
 
-# Ensure nltk dependencies exist
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
+# Ensure required NLTK data is downloaded
+nltk.download("punkt", quiet=True)
 
-# === Setup paths ===
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'data', 'news.db')
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+# Database setup
+DB_PATH = "data/news.db"
 
-# === Connect DB and create table if not exists ===
-conn = sqlite3.connect(DB_PATH)
-c = conn.cursor()
-c.execute('''
-CREATE TABLE IF NOT EXISTS news (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    stock TEXT,
-    title TEXT,
-    link TEXT,
-    published TEXT,
-    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-''')
-
-# === Your stock list (you can add all your holdings here) ===
-stocks = ["RELIANCE", "INFY", "TCS", "HDFCBANK", "ICICIBANK"]
-
-# === Fetch news from Moneycontrol (example pattern) ===
-def fetch_stock_news(stock):
-    url = f"https://www.moneycontrol.com/news/tags/{stock.lower()}.html"
-    resp = requests.get(url, timeout=10)
-    soup = BeautifulSoup(resp.text, "html.parser")
-    news_items = []
-
-    for item in soup.select("li.clearfix"):
-        title_tag = item.select_one("h2 a")
-        date_tag = item.select_one(".dateline")
+def fetch_stock_news():
+    """
+    Fetches stock market news headlines from a sample website.
+    You can later replace this with a real financial news API.
+    """
+    print("🔍 Fetching latest stock news...")
+    
+    url = "https://www.moneycontrol.com/news/business/markets/"
+    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+    
+    if response.status_code != 200:
+        print(f"⚠️ Failed to fetch news. Status code: {response.status_code}")
+        return pd.DataFrame()
+    
+    soup = BeautifulSoup(response.text, "html.parser")
+    articles = soup.select("li.clearfix")[:10]
+    
+    titles, summaries, times = [], [], []
+    
+    for art in articles:
+        title_tag = art.select_one("h2 a")
+        summary_tag = art.select_one("p")
+        
         if title_tag:
-            title = title_tag.text.strip()
-            link = title_tag.get("href")
-            published = date_tag.text.strip() if date_tag else ""
-            news_items.append((stock, title, link, published))
-    return news_items
+            titles.append(title_tag.get_text(strip=True))
+            summaries.append(summary_tag.get_text(strip=True) if summary_tag else "No summary available")
+            times.append(datetime.now())
+    
+    df = pd.DataFrame({
+        "title": titles,
+        "summary": summaries,
+        "fetched_at": times
+    })
+    return df
 
-# === Save news to DB ===
-def save_news(news_list):
-    c.executemany('INSERT INTO news (stock, title, link, published) VALUES (?, ?, ?, ?)', news_list)
+
+def save_to_database(df):
+    """Save news data to SQLite database"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS news (
+            title TEXT,
+            summary TEXT,
+            fetched_at TIMESTAMP
+        )
+    """)
     conn.commit()
 
-total_saved = 0
-for s in stocks:
-    news_data = fetch_stock_news(s)
-    save_news(news_data)
-    total_saved += len(news_data)
+    # If data found, save it. Else add test data.
+    if not df.empty:
+        df.to_sql("news", conn, if_exists="replace", index=False)
+        print(f"✅ Done! Total {len(df)} news items saved in {DB_PATH}")
+    else:
+        print("⚠️ No news found. Adding test data...")
+        test_data = [
+            {"title": "Market Test Update", "summary": "Testing DB save on Render", "fetched_at": pd.Timestamp.now()}
+        ]
+        pd.DataFrame(test_data).to_sql("news", conn, if_exists="replace", index=False)
+        print("✅ Test data added successfully.")
 
-conn.close()
-print(f"✅ Done! Total {total_saved} news items saved in {DB_PATH}")
+    conn.close()
+
+
+if __name__ == "__main__":
+    df = fetch_stock_news()
+    save_to_database(df)
