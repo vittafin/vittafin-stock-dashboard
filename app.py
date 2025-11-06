@@ -1,75 +1,38 @@
 # app.py
 from flask import Flask, render_template, request
-import sqlite3
 import os
+import json
 
 app = Flask(__name__)
 
-# Use an absolute path so it works on Render and locally
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "data", "news.db")
+DATA_FILE = os.path.join(BASE_DIR, "data", "news.json")
+os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
 
-# Ensure data folder exists
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-
-def ensure_db_and_table():
-    """Create database file and the news table if they don't exist."""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    # Create the table if it doesn't exist (columns that your fetch script provides)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS news (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            stock TEXT,
-            title TEXT,
-            link TEXT UNIQUE,
-            narration TEXT,
-            fetched_at TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-# Ensure DB/table exists at app startup
-ensure_db_and_table()
-
-def query_news(stock_filter=None, limit=100):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-
+def query_news(stock_filter=None, limit=200):
+    if not os.path.exists(DATA_FILE):
+        return []
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return []
+    # optional filter by stock or keyword in title
     if stock_filter:
-        c.execute("""
-            SELECT * FROM news
-            WHERE stock LIKE ?
-            ORDER BY fetched_at DESC
-            LIMIT ?
-        """, (f"%{stock_filter}%", limit))
-    else:
-        c.execute("""
-            SELECT * FROM news
-            ORDER BY fetched_at DESC
-            LIMIT ?
-        """, (limit,))
-    
-    rows = c.fetchall()
-    conn.close()
-    return rows
+        q = stock_filter.lower()
+        data = [d for d in data if q in d.get("stock", "").lower() or q in d.get("title", "").lower()]
+    # sort by fetched_at (ISO format)
+    data = sorted(data, key=lambda x: x.get("fetched_at", ""), reverse=True)
+    return data[:limit]
 
 @app.route("/", methods=["GET"])
 def index():
     q = request.args.get("q", "").strip()
     rows = query_news(stock_filter=q if q else None)
-    # get distinct stock names for quick filter links
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = lambda cursor, row: row[0]
-    c = conn.cursor()
-    c.execute("SELECT DISTINCT stock FROM news ORDER BY stock ASC")
-    stocks = c.fetchall()
-    conn.close()
+    # distinct stock list for tag buttons
+    all_rows = query_news(limit=2000)
+    stocks = sorted(list({r.get("stock","").upper() for r in all_rows if r.get("stock")}))
     return render_template("dashboard.html", rows=rows, q=q, stocks=stocks)
 
 if __name__ == "__main__":
-    # Local dev: helpful message
-    print("Starting Flask app. DB path:", DB_PATH)
     app.run(debug=True, host="0.0.0.0", port=5000)
